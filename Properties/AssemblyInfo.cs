@@ -24,7 +24,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("AlertMe")]
-[assembly: AssemblyDescription("Alert when the event log contains a user specified regex.")]
+[assembly: AssemblyDescription("Alert when a user specified regex matches data in Fiddler.")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Jay Satiro")]
 [assembly: AssemblyProduct("AlertMe - https://github.com/jay/Fiddler-AlertMe")]
