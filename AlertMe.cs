@@ -2,12 +2,6 @@
 Copyright (C) 2013 Jay Satiro <raysatiro@yahoo.com>
 All rights reserved.
 
--
-Copyright (C) 2013 Telerik
-Some of the project code came from Eric Lawrence's HTTPSNotary sample.
-https://www.fiddler2.com/dl/HTTPSNotarySample.zip
--
-
 This file is part of the AlertMe extension for Fiddler.
 https://github.com/jay/Fiddler-AlertMe
 
@@ -31,12 +25,14 @@ using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using Fiddler;
 
+
 namespace AlertMe
 {
-    public class AlertMe : IFiddlerExtension
+    public class AlertMe : IAutoTamper
     {
         #region Preferences
         /// <summary>
@@ -75,25 +71,55 @@ namespace AlertMe
         bool bAlertByMsgBox = false;
 
         /// <summary>
-        /// Absolute path of a sound to play on alert
+        /// Sound to play on alert
         /// </summary>
-        string sSound = "C:\\Windows\\chord.wav";
+        System.Media.SoundPlayer soundPlayer = new System.Media.SoundPlayer(@"C:\Windows\media\chord.wav");
 
         /// <summary>
-        /// E-Mail address to alert
+        /// E-Mail information
         /// </summary>
-        string sEmail;
+        EmailInfo emailInfo = new EmailInfo("");
 
         /// <summary>
         /// List of hosts to watch
         /// </summary>
-        HostList hlHostsToWatch;
+        HostList hlHostsToWatch = new HostList("*");
 
         /// <summary>
         /// Regular expression to match
         /// </summary>
-        string sRegex = "*";
-        #endregion
+        Regex regexPattern = new Regex(".*", RegexOptions.Compiled);
+
+        public void ShowPreferences()
+        {
+            string sPrefs = String.Format("Enabled: {0}", (bEnabled ? "YES" : "NO"));
+
+            sPrefs += "\nMonitor: ";
+            sPrefs += (bMonitorRequests ? "requests, " : "");
+            sPrefs += (bMonitorResponses ? "responses, " : "");
+            sPrefs += (bMonitorEventLog ? "eventlog, " : "");
+            if (sPrefs.EndsWith(", "))
+            {
+                sPrefs = sPrefs.Remove(sPrefs.Length - 2);
+            }
+
+            sPrefs += "\nAlert by: ";
+            sPrefs += (bAlertBySound ? "sound, " : "");
+            sPrefs += (bAlertByEmail ? "email, " : "");
+            sPrefs += (bAlertByMsgBox ? "msgbox, " : "");
+            if (sPrefs.EndsWith(", "))
+            {
+                sPrefs = sPrefs.Remove(sPrefs.Length - 2);
+            }
+
+            sPrefs += "\nSound: " + soundPlayer.SoundLocation + (soundPlayer.IsLoadCompleted ? "" : " (LOAD FAILED)");
+            sPrefs += "\nEmail info: " + emailInfo.ToString();
+            sPrefs += "\nHosts to watch (semi-colon delimited): " + hlHostsToWatch.ToString();
+            sPrefs += "\nRegular expression: " + regexPattern.ToString();
+
+            MessageBox.Show(sPrefs, "Fiddler-AlertMe Preferences");
+        }
+        #endregion Preferences
 
         #region UI fields
         // The MenuItems hold the UI entrypoints for the extension.
@@ -113,10 +139,10 @@ namespace AlertMe
         private MenuItem miEditHostsToWatch;
         private MenuItem miEditRegex;
         private MenuItem miSplit4;
-        private MenuItem miRuleSummary;
+        private MenuItem miShowPreferences;
         private MenuItem miSplit5;
         private MenuItem miAbout;
-        #endregion
+        #endregion UI fields
 
         #region UI_HANDLERS
         private void InitializeMenu()
@@ -133,7 +159,7 @@ namespace AlertMe
             miMonitorRequests.Checked = bMonitorRequests;
             miMonitorRequests.Click += new System.EventHandler(miMonitorRequests_Click);
 
-            miMonitorResponses = new MenuItem("Monitor replies");
+            miMonitorResponses = new MenuItem("Monitor responses");
             miMonitorResponses.Checked = bMonitorResponses;
             miMonitorResponses.Click += new System.EventHandler(miMonitorResponses_Click);
 
@@ -171,8 +197,8 @@ namespace AlertMe
 
             miSplit4 = new MenuItem("-");
 
-            miRuleSummary = new MenuItem("&Show current preferences");
-            miRuleSummary.Click += new System.EventHandler(miRuleSummary_Click);
+            miShowPreferences = new MenuItem("&Show current preferences");
+            miShowPreferences.Click += new System.EventHandler(miShowPreferences_Click);
 
             miSplit5 = new MenuItem("-");
 
@@ -195,7 +221,7 @@ namespace AlertMe
                 miEditHostsToWatch,
                 miEditRegex,
                 miSplit4,
-                miRuleSummary,
+                miShowPreferences,
                 miSplit5,
                 miAbout
             });
@@ -206,6 +232,11 @@ namespace AlertMe
             miEnabled.Checked = !miEnabled.Checked;
             bEnabled = miEnabled.Checked;
             FiddlerApplication.Prefs.SetBoolPref("fiddler.extensions.AlertMe.Enabled", bEnabled);
+
+            if (bEnabled)
+            {
+                ShowPreferences(); //rem blocking..
+            }
         }
 
         // Split1
@@ -242,9 +273,23 @@ namespace AlertMe
 
         void miAlertByEmail_Click(object sender, EventArgs e)
         {
+            if (emailInfo.IsEmpty() && !miAlertByEmail.Checked)
+            {
+                MessageBox.Show("Alert by e-mail cannot be enabled until you add your e-mail info.", "Fiddler-AlertMe");
+                return;
+            }
+
             miAlertByEmail.Checked = !miAlertByEmail.Checked;
             bAlertByEmail = miAlertByEmail.Checked;
             FiddlerApplication.Prefs.SetBoolPref("fiddler.extensions.AlertMe.AlertByEmail", bAlertByEmail);
+
+            if (bAlertByEmail)
+            {
+                MessageBox.Show(
+                    "WARNING: Alert by e-mail is an experimental feature. There is no rate limiting. Exercise extreme caution.",
+                    "Fiddler-AlertMe"
+                );
+            }
         }
 
         void miAlertByMsgBox_Click(object sender, EventArgs e)
@@ -258,10 +303,12 @@ namespace AlertMe
 
         void miEditSound_Click(object sender, EventArgs e)
         {
+            string sOldSound = soundPlayer.SoundLocation;
+
             string sNewSound = frmPrompt.GetUserString(
                 "Edit sound",
-                "Enter the absolute path of a sound to play on alert.",
-                sSound,
+                "Enter the absolute path of a .wav file sound to play on alert.",
+                sOldSound,
                 true
             );
 
@@ -270,94 +317,122 @@ namespace AlertMe
                 return;
             }
 
-            sSound = sNewSound;
-            FiddlerApplication.Prefs.SetStringPref("fiddler.extensions.AlertMe.Sound", sSound);
+            try
+            {
+                soundPlayer.SoundLocation = sNewSound;
+                soundPlayer.Load();
+            }
+            catch (Exception)
+            {
+                MessageBox.Show("The sound that you specified was not accepted. Try again.", "Fiddler-AlertMe [Error]");
+                try
+                {
+                    soundPlayer.SoundLocation = sOldSound;
+                    soundPlayer.Load();
+                }
+                catch (Exception)
+                {
+                }
+                return;
+            }
+
+            FiddlerApplication.Prefs.SetStringPref("fiddler.extensions.AlertMe.Sound", sNewSound);
         }
 
         void miEditEmail_Click(object sender, EventArgs e)
         {
-            string sNewEmail = frmPrompt.GetUserString(
-                "Edit e-mail",
-                "Enter the email address to alert.",
-                sEmail,
+            string sOldInfo = emailInfo.ToString();
+
+            string sNewInfo = frmPrompt.GetUserString(
+                "Edit e-mail info",
+                "Enter the following: smtp.server.com; port; from@email.com; to@email.com             A test e-mail will be sent.",
+                sOldInfo,
                 true
             );
 
-            if (null == sNewEmail)
+            if (null == sNewInfo)
             {
                 return;
             }
 
-            sEmail = sNewEmail;
-            FiddlerApplication.Prefs.SetStringPref("fiddler.extensions.AlertMe.Email", sEmail);
+            if (!emailInfo.AssignFromString(sNewInfo) || !emailInfo.Send("Fiddler-AlertMe: Test e-mail", "This is a test."))
+            {
+                MessageBox.Show("The email info that you specified was not accepted. Try again.", "Fiddler-AlertMe [Error]");
+                emailInfo.AssignFromString(sOldInfo);
+                return;
+            }
+
+            MessageBox.Show("It appears the test e-mail was sent successfully. Check your inbox to confirm.", "Fiddler-AlertMe");
+            FiddlerApplication.Prefs.SetStringPref("fiddler.extensions.AlertMe.Email", emailInfo.ToString());
         }
 
         void miEditHostsToWatch_Click(object sender, EventArgs e)
         {
-            string sNewHostsToWatch = frmPrompt.GetUserString(
+            string sOldHosts = hlHostsToWatch.ToString();
+
+            string sNewHosts = frmPrompt.GetUserString(
                 "Edit hosts to watch",
-                "Enter the list of hosts to watch. Use a semi-colon to separate hosts.",
-                hlHostsToWatch.ToString(),
+                "Enter a semi-colon delimited list of hosts to watch for request/response. Use an asterisk as a wildcard.",
+                sOldHosts,
                 true
             );
 
-            if (null == sNewHostsToWatch)
+            if (null == sNewHosts)
             {
                 return;
             }
 
-            hlHostsToWatch = new HostList(sNewHostsToWatch);
+            if (!hlHostsToWatch.AssignFromString(sNewHosts))
+            {
+                MessageBox.Show("The list of hosts that you specified was not accepted. Try again.", "Fiddler-AlertMe [Error]");
+                hlHostsToWatch.AssignFromString(sOldHosts);
+                return;
+            }
+
             FiddlerApplication.Prefs.SetStringPref("fiddler.extensions.AlertMe.HostsToWatch", hlHostsToWatch.ToString());
         }
 
         void miEditRegex_Click(object sender, EventArgs e)
         {
-            string sNewRegex = frmPrompt.GetUserString(
+            string sOldPattern = regexPattern.ToString();
+
+            string sNewPattern = frmPrompt.GetUserString(
                 "Edit Regular Expression",
-                "Enter the regular expression to match.",
-                sRegex,
+                "Enter a regular expression to match. Options: http://msdn.microsoft.com/en-us/library/yd1hzczs(v=vs.100).aspx",
+                sOldPattern,
                 true
             );
 
-            if (null == sNewRegex)
+            if (null == sNewPattern)
             {
                 return;
             }
 
-            sRegex = sNewRegex;
-            FiddlerApplication.Prefs.SetStringPref("fiddler.extensions.AlertMe.Regex", sRegex);
+            try
+            {
+                regexPattern = new Regex(sNewPattern, RegexOptions.Compiled);
+            }
+            catch (Exception)
+            {
+                MessageBox.Show("The regular expression that you specified was not accepted. Try again.", "Fiddler-AlertMe [Error]");
+                try
+                {
+                    regexPattern = new Regex(sOldPattern, RegexOptions.Compiled);
+                }
+                catch (Exception)
+                {
+                }
+                return;
+            }
+
+            FiddlerApplication.Prefs.SetStringPref("fiddler.extensions.AlertMe.Regex", sNewPattern);
         }
 
         // Split4
 
-        void miRuleSummary_Click(object sender, EventArgs e)
+        void miShowPreferences_Click(object sender, EventArgs e)
         {
-            string sPrefs = String.Format("Enabled: {0}", (bEnabled ? "YES" : "NO"));
-
-            sPrefs += "\nMonitor: ";
-            sPrefs += (bMonitorRequests ? "requests, " : "");
-            sPrefs += (bMonitorResponses ? "responses, " : "");
-            sPrefs += (bMonitorEventLog ? "eventlog, " : "");
-            if (sPrefs.EndsWith(", "))
-            {
-                sPrefs = sPrefs.Remove(sPrefs.Length - 2);
-            }
-
-            sPrefs += "\nAlert by: ";
-            sPrefs += (bAlertBySound ? "sound, " : "");
-            sPrefs += (bAlertByEmail ? "email, " : "");
-            sPrefs += (bAlertByMsgBox ? "msgbox, " : "");
-            if (sPrefs.EndsWith(", "))
-            {
-                sPrefs = sPrefs.Remove(sPrefs.Length - 2);
-            }
-
-            sPrefs += "\nSound: " + sSound;
-            sPrefs += "\nEmail: " + sEmail;
-            sPrefs += "\nHosts to watch (semi-colon delimited): " + hlHostsToWatch.ToString();
-            sPrefs += "\nRegular expression: " + sRegex;
-
-            MessageBox.Show(sPrefs, "Rule summary");
+            ShowPreferences();
         }
 
         // Split5
@@ -391,10 +466,59 @@ namespace AlertMe
             bAlertBySound = FiddlerApplication.Prefs.GetBoolPref("fiddler.extensions.AlertMe.AlertBySound", bAlertBySound);
             bAlertByEmail = FiddlerApplication.Prefs.GetBoolPref("fiddler.extensions.AlertMe.AlertByEmail", bAlertByEmail);
             bAlertByMsgBox = FiddlerApplication.Prefs.GetBoolPref("fiddler.extensions.AlertMe.AlertByMsgBox", bAlertByMsgBox);
-            sSound = FiddlerApplication.Prefs.GetStringPref("fiddler.extensions.AlertMe.Sound", sSound);
-            sEmail = FiddlerApplication.Prefs.GetStringPref("fiddler.extensions.AlertMe.Email", sEmail);
-            hlHostsToWatch = new HostList(FiddlerApplication.Prefs.GetStringPref("fiddler.extensions.AlertMe.HostsToWatch", "*"));
-            sRegex = FiddlerApplication.Prefs.GetStringPref("fiddler.extensions.AlertMe.Regex", "*");
+
+            string sSound_Default = soundPlayer.SoundLocation;
+            string sSound = FiddlerApplication.Prefs.GetStringPref("fiddler.extensions.AlertMe.Sound", sSound_Default);
+            try
+            {
+                soundPlayer.SoundLocation = sSound;
+                soundPlayer.Load();
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    soundPlayer.SoundLocation = sSound_Default;
+                    soundPlayer.Load();
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            string sEmail_Default = emailInfo.ToString();
+            string sEmail = FiddlerApplication.Prefs.GetStringPref("fiddler.extensions.AlertMe.Email", sEmail_Default);
+            if (!emailInfo.AssignFromString(sEmail))
+            {
+                emailInfo.AssignFromString(sEmail_Default);
+            }
+
+            string sHostsToWatch_Default = hlHostsToWatch.ToString();
+            string sHostsToWatch = FiddlerApplication.Prefs.GetStringPref(
+                "fiddler.extensions.AlertMe.HostsToWatch", sHostsToWatch_Default
+            );
+            if (!hlHostsToWatch.AssignFromString(sHostsToWatch))
+            {
+                hlHostsToWatch.AssignFromString(sHostsToWatch_Default);
+            }
+
+            string sRegexPattern_Default = regexPattern.ToString();
+            string sRegexPattern = FiddlerApplication.Prefs.GetStringPref("fiddler.extensions.AlertMe.Regex", sRegexPattern_Default);
+            try
+            {
+                regexPattern = new Regex(sRegexPattern, RegexOptions.Compiled);
+            }
+            catch (Exception)
+            {
+                try
+                {
+                    regexPattern = new Regex(sRegexPattern_Default, RegexOptions.Compiled);
+                }
+                catch (Exception)
+                {
+                }
+                return;
+            }
 
             // Create the UI
             InitializeMenu();
@@ -419,13 +543,252 @@ namespace AlertMe
 
         private void FiddlerApplication_Log_OnLogString(object sender, LogEventArgs oLEA)
         {
-            if (!bEnabled)
+            if (!bEnabled || !bMonitorEventLog)
             {
                 return;
             }
-            //rem this is blocking..
-            MessageBox.Show(oLEA.LogString, "Fiddler: " + sender.GetType().ToString());
+
+            Match match = regexPattern.Match(oLEA.LogString);
+            if (match.Success && !oLEA.LogString.StartsWith("Fiddler-AlertMe [Exception]"))
+            {
+                Alert(match, "Event Log match:  " + oLEA.LogString);
+            }
         }
 
+        public void AutoTamperRequestBefore(Session oSession)
+        {
+        }
+
+        public void AutoTamperRequestAfter(Session oSession)
+        {
+            if (!bEnabled
+                || !bMonitorRequests
+                || (null == oSession.oRequest)
+                || (null == oSession.oRequest.headers)
+                || !hlHostsToWatch.ContainsHost(oSession.host)
+            )
+            {
+                return;
+            }
+
+            try
+            {
+                Match match = regexPattern.Match(oSession.oRequest.headers.ToString());
+                if (match.Success)
+                {
+                    Alert(match, "Session " + oSession.id + " request header match.  " + oSession.fullUrl);
+                }
+            }
+            catch (Exception ex)
+            {
+                FiddlerApplication.Log.LogFormat(
+                    "Fiddler-AlertMe [Exception]: While examining session {0} request headers: {1}", oSession.id, ex.ToString()
+                );
+            }
+
+            if (null == oSession.requestBodyBytes)
+            {
+                return;
+            }
+
+            //bool bDecoded = oSession.utilDecodeRequest();
+
+            try
+            {
+                Match match = regexPattern.Match(oSession.GetRequestBodyAsString());
+                if (match.Success)
+                {
+                    Alert(match, "Session " + oSession.id + " request body match.  " + oSession.fullUrl);
+                }
+            }
+            catch (Exception ex)
+            {
+                FiddlerApplication.Log.LogFormat(
+                    "Fiddler-AlertMe [Exception]: While examining session {0} request body: {1}", oSession.id, ex.ToString()
+                );
+            }
+        }
+
+        public void AutoTamperResponseBefore(Session oSession)
+        {
+        }
+
+        public void AutoTamperResponseAfter(Session oSession)
+        {
+            if (!bEnabled
+                || !bMonitorResponses
+                || (null == oSession.oResponse)
+                || (null == oSession.oResponse.headers)
+                || !hlHostsToWatch.ContainsHost(oSession.host)
+            )
+            {
+                return;
+            }
+
+            try
+            {
+                Match match = regexPattern.Match(oSession.oResponse.headers.ToString());
+                if (match.Success)
+                {
+                    Alert(match, "Session " + oSession.id + " response header match.  " + oSession.fullUrl);
+                }
+            }
+            catch (Exception ex)
+            {
+                FiddlerApplication.Log.LogFormat(
+                    "Fiddler-AlertMe [Exception]: While examining session {0} response headers: {1}", oSession.id, ex.ToString()
+                );
+            }
+
+            if (null == oSession.responseBodyBytes)
+            {
+                return;
+            }
+
+            //bool bDecoded = oSession.utilDecodeResponse();
+
+            try
+            {
+                Match match = regexPattern.Match(oSession.GetResponseBodyAsString());
+                if (match.Success)
+                {
+                    Alert(match, "Session " + oSession.id + " response body match.  " + oSession.fullUrl);
+                }
+            }
+            catch (Exception ex)
+            {
+                FiddlerApplication.Log.LogFormat(
+                    "Fiddler-AlertMe [Exception]: While examining session {0} response body: {1}", oSession.id, ex.ToString()
+                );
+            }
+        }
+
+        public void OnBeforeReturningError(Session oSession)
+        {
+        }
+
+        private void Alert(Match match, string sWhere)//, Session oSession)
+        {
+            string sSubject = "Fiddler-AlertMe: " + sWhere;
+
+            string sBody = sSubject + "\n\n" + "UTC timestamp: "
+                + System.DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture) + "\n\n"
+                + "Your regex pattern is: " + regexPattern.ToString();
+
+            for (int ctr = 1; ctr < match.Groups.Count; ++ctr)
+            {
+                sBody += "\n\n" + "Group " + ctr + " found at position " + match.Groups[ctr].Index + ": " + match.Groups[ctr].Value;
+            }
+
+            if (sSubject.Length > 78)
+            {
+                sSubject = sSubject.Remove(74) + " ...";
+            }
+
+            if (bAlertBySound && soundPlayer.IsLoadCompleted)
+            {
+                soundPlayer.Play();
+            }
+
+            if (bAlertByEmail)
+            {
+                emailInfo.Send(sSubject, sBody);
+            }
+
+            if (bAlertByMsgBox)
+            {
+                MessageBox.Show(sBody, sSubject);
+            }
+        }
     }
+
+    #region EmailInfo
+    public class EmailInfo
+    {
+        public string sServer;
+        public int iPort;
+        public string sFrom, sTo;
+
+        public void Clear()
+        {
+            sServer = "";
+            iPort = 0;
+            sFrom = "";
+            sTo = "";
+        }
+
+        public bool IsEmpty()
+        {
+            return ((String.Empty == sServer) && (0 == iPort) && (String.Empty == sFrom) && (String.Empty == sTo));
+        }
+
+        public EmailInfo(string s)
+        {
+            AssignFromString(s);
+        }
+
+        public bool AssignFromString(string s)
+        {
+            if (null == s)
+            {
+                return false;
+            }
+
+            s = s.Trim();
+
+            if (String.Empty == s)
+            {
+                Clear();
+                return true;
+            }
+
+            string[] sArray = s.Split(';');
+
+            if ((sArray.Length == 4)
+                || ((sArray.Length == 5) && (sArray[4].Trim().Length == 0))
+            )
+            {
+                sServer = sArray[0].Trim();
+                Int32.TryParse(sArray[1].Trim(), out iPort);
+                sFrom = sArray[2].Trim();
+                sTo = sArray[3].Trim();
+                return true;
+            }
+
+            return false;
+        }
+
+        public override string ToString()
+        {
+            if (IsEmpty())
+            {
+                return "";
+            }
+            else
+            {
+                return sServer + "; " + iPort + "; " + sFrom + "; " + sTo;
+            }
+        }
+
+        public bool Send(string sSubject, string sBody)
+        {
+            if (IsEmpty())
+            {
+                return false;
+            }
+
+            try
+            {
+                new System.Net.Mail.SmtpClient(sServer, iPort).Send(sFrom, sTo, sSubject, sBody);
+            }
+            catch (Exception ex)
+            {
+                FiddlerApplication.Log.LogFormat("Fiddler-AlertMe [Exception]: While sending e-mail: {0}", ex.ToString());
+                return false;
+            }
+
+            return true;
+        }
+    }
+    #endregion EmailInfo
 }
