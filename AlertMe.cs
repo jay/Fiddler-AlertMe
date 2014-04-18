@@ -6,17 +6,17 @@ This file is part of the AlertMe extension for Fiddler.
 https://github.com/jay/Fiddler-AlertMe
 
 AlertMe is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+it under the terms of the GNU Lesser General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
 
 AlertMe is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
-You should have received a copy of the GNU General Public License
-along with AlertMe.  If not, see <http://www.gnu.org/licenses/>.
+You should have received a copy of the GNU Lesser General Public
+License along with AlertMe.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 using System;
@@ -439,10 +439,10 @@ namespace AlertMe
 
         void miAbout_Click(object sender, EventArgs e)
         {
-            string sLicenseNotice = "GPLv3 licensed.\nhttp://www.gnu.org/licenses/gpl-3.0.html";
+            string sLicenseNotice = "LGPLv3 licensed.\nhttp://www.gnu.org/licenses/lgpl-3.0.html";
             string sProjectNotice = "If you like it, help improve it.\nhttps://github.com/jay/Fiddler-AlertMe";
             string sAbout = String.Format(
-                "{0}/{1} {2}\n\n{3}\n\n{4}\n\n{5}",
+                "{0}/{1}\t{2}\n\n{3}\n\n{4}\n\n{5}",
                 Assembly.GetExecutingAssembly().GetName().Name,
                 Assembly.GetExecutingAssembly().GetName().Version,
                 FiddlerApplication.GetVersionString(),
