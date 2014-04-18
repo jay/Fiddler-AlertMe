@@ -33,4 +33,4 @@ The source can be found on [GitHub](https://github.com/jay/Fiddler-AlertMe). Sin
 
 ### Send me any questions you have
 
-Jay Satiro `<raysatiro$at$yahoo{}com>` and put CSVread/CSVwrite in the subject.
+Jay Satiro `<raysatiro$at$yahoo{}com>` and put Fiddler-AlertMe in the subject.
