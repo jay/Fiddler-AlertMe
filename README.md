@@ -17,7 +17,7 @@ What can it do?
 * Alert by sound, e-mail, message box
 * User can specify sound, e-mail, hosts to watch, regular expression
 
-The code is functioning as expected and is a good proof of concept. Several issues still need to be addressed, most importantly latency, blocking and a lack of rate limiting (imagine a match-any regex triggering thousands of emails due to no rate limiting).
+The code is functioning as expected and is a good proof of concept. Several issues still need to be addressed, most importantly latency, blocking (eg for message box alerts the session will not continue until you click OK) and a lack of rate limiting (eg imagine a match-any regex triggering thousands of emails due to no rate limiting).
 
 Other
 -----
@@ -30,6 +30,10 @@ AlertMe is free software and it is licensed under the [GNU Lesser General Public
 ### Source
 
 The source can be found on [GitHub](https://github.com/jay/Fiddler-AlertMe). Since you're reading this maybe you're already there?
+
+### Binary
+
+I added a binary that can be found on the project's [Releases page](https://github.com/jay/Fiddler-AlertMe/releases).
 
 ### Send me any questions you have
 
